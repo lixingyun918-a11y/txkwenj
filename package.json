@@ -1,0 +1,25 @@
+{
+  "name": "jia-cai-xian-avatar-frame",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "deploy:cf": "npm run build && npx wrangler pages deploy dist --project-name vbzmk-avatar-frame --commit-dirty=true",
+    "preview": "vite preview --host 0.0.0.0",
+    "smoke": "node scripts/e2e-smoke.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  }
+}
