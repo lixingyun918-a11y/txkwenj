@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FramePicker } from './components/FramePicker';
 import { HeroHeader } from './components/HeroHeader';
-import { LoadingScreen } from './components/LoadingScreen';
 import { MusicButton } from './components/MusicButton';
 import { ParticleLayer } from './components/ParticleLayer';
 import { ResultPanel } from './components/ResultPanel';
@@ -159,7 +158,6 @@ function App() {
 
   return (
     <>
-      <LoadingScreen />
       <main className="app-shell">
         <ParticleLayer />
         <MusicButton />

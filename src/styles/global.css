@@ -129,7 +129,7 @@ img {
   margin: 0 auto;
   padding: calc(18px + env(safe-area-inset-top)) 16px calc(42px + env(safe-area-inset-bottom));
   overflow: hidden;
-  animation: pageEnter 620ms ease both;
+  animation: pageEnter 180ms ease-out both;
 }
 
 .app-shell::before {
@@ -304,8 +304,8 @@ img {
   isolation: isolate;
   transform: translateZ(0);
   animation:
-    heroTitleEnter 720ms ease 160ms both,
-    heroGoldGlow 3.2s ease-in-out 1.1s infinite;
+    heroTitleEnter 280ms ease-out both,
+    heroGoldGlow 3.2s ease-in-out 680ms infinite;
 }
 
 .hero-title-art::before,
@@ -335,15 +335,15 @@ img {
   background-size: 230% 100%;
   mix-blend-mode: screen;
   opacity: 0.58;
-  -webkit-mask-image: url("/brand/hero-title-gold.png");
-  mask-image: url("/brand/hero-title-gold.png");
+  -webkit-mask-image: url("/brand/hero-title-gold.webp");
+  mask-image: url("/brand/hero-title-gold.webp");
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size: contain;
   mask-size: contain;
-  animation: heroGoldSweep 3.7s ease-in-out 1.1s infinite;
+  animation: heroGoldSweep 3.7s ease-in-out 680ms infinite;
 }
 
 .hero-title-art picture {
