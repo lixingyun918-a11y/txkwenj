@@ -10,7 +10,7 @@ export const frameTemplates: FrameTemplate[] = Array.from({ length: 6 }, (_, ind
 
   return {
     id: `frame-${number}`,
-    name: `头像框 ${number}`,
+    name: `头像框${number}`,
     src: `/frames/${encodeURIComponent(fileName)}`
   };
 });

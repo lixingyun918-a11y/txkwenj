@@ -32,7 +32,7 @@ export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   const url = URL.createObjectURL(file);
   try {
     return await loadImage(url);
-  } catch (error) {
+  } catch {
     throw new Error(file.name.toLowerCase().match(/\.hei[cf]$/) ? '当前浏览器不支持 HEIC，请换 JPG 或 PNG' : '头像读取失败，请更换图片重试');
   } finally {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);

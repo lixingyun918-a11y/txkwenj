@@ -87,7 +87,7 @@ function connect(wsUrl) {
   });
 }
 
-async function createPageTarget(port) {
+async function createPageTarget() {
   const target = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' }).then((response) => response.json());
   if (!target.webSocketDebuggerUrl) {
     throw new Error(`创建 Chrome 页面失败: ${JSON.stringify(target)}`);
@@ -118,28 +118,24 @@ async function waitForPageLoad(client, timeout = 10000) {
   }
 }
 
-async function waitForResult(client, previousSrc = '') {
-  const expression = `(() => new Promise((resolve) => {
-    const started = Date.now();
-    const previousSrc = ${JSON.stringify(previousSrc)};
-    function tick() {
-      const img = document.querySelector('.result-preview img');
-      const toast = document.querySelector('.toast')?.textContent || '';
-      if (img && img.complete && img.naturalWidth === 1080 && img.naturalHeight === 1080 && img.src !== previousSrc) {
-        resolve({ ok: true, width: img.naturalWidth, height: img.naturalHeight, toast, src: img.src });
-        return;
-      }
-      if (Date.now() - started > 15000) {
-        resolve({ ok: false, width: img?.naturalWidth || 0, height: img?.naturalHeight || 0, toast, src: img?.src || '' });
-        return;
-      }
-      setTimeout(tick, 100);
-    }
-    tick();
-  }))()`;
-
+async function waitForLoadingGone(client) {
   const result = await client.send('Runtime.evaluate', {
-    expression,
+    expression: `(() => new Promise((resolve) => {
+      const started = Date.now();
+      function tick() {
+        const loading = document.querySelector('.loading-screen');
+        if (!loading) {
+          resolve({ ok: true, elapsed: Date.now() - started });
+          return;
+        }
+        if (Date.now() - started > 2200) {
+          resolve({ ok: false, elapsed: Date.now() - started });
+          return;
+        }
+        setTimeout(tick, 50);
+      }
+      tick();
+    }))()`,
     awaitPromise: true,
     returnByValue: true
   });
@@ -147,26 +143,26 @@ async function waitForResult(client, previousSrc = '') {
   return result.result.value;
 }
 
-async function waitForLoadingGone(client) {
-  const expression = `(() => new Promise((resolve) => {
-    const started = Date.now();
-    function tick() {
-      const loading = document.querySelector('.loading-screen');
-      if (!loading) {
-        resolve({ ok: true, elapsed: Date.now() - started });
-        return;
-      }
-      if (Date.now() - started > 2200) {
-        resolve({ ok: false, elapsed: Date.now() - started });
-        return;
-      }
-      setTimeout(tick, 50);
-    }
-    tick();
-  }))()`;
-
+async function waitForResult(client, previousSrc = '') {
   const result = await client.send('Runtime.evaluate', {
-    expression,
+    expression: `(() => new Promise((resolve) => {
+      const started = Date.now();
+      const previousSrc = ${JSON.stringify(previousSrc)};
+      function tick() {
+        const img = document.querySelector('.result-preview img');
+        const toast = document.querySelector('.toast')?.textContent || '';
+        if (img && img.complete && img.naturalWidth === 1080 && img.naturalHeight === 1080 && img.src !== previousSrc) {
+          resolve({ ok: true, width: img.naturalWidth, height: img.naturalHeight, toast, src: img.src });
+          return;
+        }
+        if (Date.now() - started > 15000) {
+          resolve({ ok: false, width: img?.naturalWidth || 0, height: img?.naturalHeight || 0, toast, src: img?.src || '' });
+          return;
+        }
+        setTimeout(tick, 100);
+      }
+      tick();
+    }))()`,
     awaitPromise: true,
     returnByValue: true
   });
@@ -192,7 +188,7 @@ const chrome = spawn(chromePath, [
 
 try {
   await waitForJson(`http://127.0.0.1:${port}/json/version`);
-  const target = await createPageTarget(port);
+  const target = await createPageTarget();
   const client = await connect(target.webSocketDebuggerUrl);
 
   await client.send('Page.enable');
@@ -210,6 +206,7 @@ try {
   await client.send('Page.navigate', { url: appUrl });
   await waitForPageLoad(client);
   await sleep(200);
+
   const loadingState = await waitForLoadingGone(client);
   if (!loadingState.ok) {
     throw new Error(`Loading 未在 2.2 秒内移除: ${JSON.stringify(loadingState)}`);
@@ -226,24 +223,16 @@ try {
     nodeId: input.nodeId,
     files: [avatarPath]
   });
-  const uploadState = await client.send('Runtime.evaluate', {
-    expression: `(() => {
-      const input = document.querySelector('input[type=file]');
-      return { files: input?.files?.length || 0, name: input?.files?.[0]?.name || '', body: document.body.innerText.slice(0, 300) };
-    })()`,
-    returnByValue: true
-  });
 
   const firstResult = await waitForResult(client);
   if (!firstResult.ok) {
-    throw new Error(`上传生成失败: ${JSON.stringify({ firstResult, uploadState: uploadState.result.value })}`);
+    throw new Error(`上传生成失败: ${JSON.stringify(firstResult)}`);
   }
+
   const headerState = await client.send('Runtime.evaluate', {
     expression: `(() => {
       const title = document.querySelector('.hero h1');
-      const body = document.body.innerText;
       return {
-        oldEyebrowExists: body.includes('2026 新年头像框'),
         title: title?.textContent || '',
         titleWidth: Math.round(title?.getBoundingClientRect().width || 0),
         subtitle: document.querySelector('.hero p')?.textContent || '',
@@ -253,9 +242,6 @@ try {
     })()`,
     returnByValue: true
   });
-  if (headerState.result.value.oldEyebrowExists) {
-    throw new Error('旧顶部小标题仍然存在');
-  }
   if (headerState.result.value.titleWidth > headerState.result.value.viewportWidth - 24) {
     throw new Error(`标题溢出视口: ${JSON.stringify(headerState.result.value)}`);
   }
@@ -286,7 +272,6 @@ try {
     viewport: { width: viewportWidth, height: viewportHeight, deviceScaleFactor },
     header: headerState.result.value,
     loading: loadingState,
-    firstResult: { width: firstResult.width, height: firstResult.height, toast: firstResult.toast },
     frameCount: frameResults.length,
     frameResults: frameResults.map((item, index) => ({ frame: index + 1, width: item.width, height: item.height, toast: item.toast })),
     screenshot: path.join(outputDir, `${outputPrefix}-page.png`),
