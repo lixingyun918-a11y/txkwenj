@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "deploy:cf": "npm run build && npx wrangler pages deploy dist --project-name vbzmk-avatar-frame --commit-dirty=true",
     "preview": "vite preview --host 0.0.0.0",
     "smoke": "node scripts/e2e-smoke.mjs"
   },
