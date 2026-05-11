@@ -6,20 +6,23 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0",
+    "preview": "npm run build && wrangler dev",
     "smoke": "node scripts/e2e-smoke.mjs",
-    "wechat:matrix": "npm run build && node scripts/e2e-wechat-matrix.mjs"
+    "wechat:matrix": "npm run build && node scripts/e2e-wechat-matrix.mjs",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.2",
+    "@cloudflare/vite-plugin": "^1.36.3",
     "@types/node": "^25.6.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.0"
+    "vite": "^7.3.0",
+    "wrangler": "^4.90.0"
   }
 }
