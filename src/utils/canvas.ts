@@ -3,6 +3,11 @@ import { loadImage, loadImageFromFile } from './image';
 const OUTPUT_SIZE = 1080;
 const MAX_DECODE_SIDE = 2048;
 const CANVAS_BLOB_TIMEOUT_MS = 8000;
+const CUTOUT_CENTER_X = OUTPUT_SIZE / 2;
+const CUTOUT_CENTER_Y = OUTPUT_SIZE * 0.49;
+const CUTOUT_RADIUS_X = OUTPUT_SIZE * 0.44;
+const CUTOUT_RADIUS_Y = OUTPUT_SIZE * 0.45;
+const CUTOUT_EDGE_SCALE = 1.08;
 
 type RenderedAvatar = {
   blob: Blob;
@@ -80,7 +85,87 @@ function sourceSize(source: HTMLCanvasElement | HTMLImageElement) {
   return { width: source.naturalWidth, height: source.naturalHeight };
 }
 
-function prepareFrameLayer(frame: HTMLImageElement): HTMLCanvasElement {
+function getCutoutWhiteStrength(data: Uint8ClampedArray, index: number): number {
+  if (data[index + 3] === 0) {
+    return 0;
+  }
+
+  const red = data[index];
+  const green = data[index + 1];
+  const blue = data[index + 2];
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const average = (red + green + blue) / 3;
+
+  if (average <= 238 || max - min >= 18) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, (average - 238) / 17));
+}
+
+function isInsideCutout(x: number, y: number): boolean {
+  const normalized = ((x - CUTOUT_CENTER_X) / CUTOUT_RADIUS_X) ** 2 + ((y - CUTOUT_CENTER_Y) / CUTOUT_RADIUS_Y) ** 2;
+  return normalized <= CUTOUT_EDGE_SCALE;
+}
+
+function enqueueCutoutPixel(queue: Int32Array, seen: Uint8Array, pixel: number, tail: number): number {
+  if (seen[pixel]) {
+    return tail;
+  }
+
+  seen[pixel] = 1;
+  queue[tail] = pixel;
+  return tail + 1;
+}
+
+function clearConnectedCutout(data: Uint8ClampedArray) {
+  const pixelCount = OUTPUT_SIZE * OUTPUT_SIZE;
+  const seen = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+  const seedX = Math.round(CUTOUT_CENTER_X);
+  const seedY = Math.round(CUTOUT_CENTER_Y);
+  let head = 0;
+  let tail = 0;
+
+  tail = enqueueCutoutPixel(queue, seen, seedY * OUTPUT_SIZE + seedX, tail);
+
+  while (head < tail) {
+    const pixel = queue[head];
+    head += 1;
+
+    const x = pixel % OUTPUT_SIZE;
+    const y = Math.floor(pixel / OUTPUT_SIZE);
+
+    if (!isInsideCutout(x, y)) {
+      continue;
+    }
+
+    const index = pixel * 4;
+    const strength = getCutoutWhiteStrength(data, index);
+
+    if (!strength) {
+      continue;
+    }
+
+    data[index + 3] = Math.round(data[index + 3] * (1 - strength));
+
+    if (x > 0) {
+      tail = enqueueCutoutPixel(queue, seen, pixel - 1, tail);
+    }
+    if (x < OUTPUT_SIZE - 1) {
+      tail = enqueueCutoutPixel(queue, seen, pixel + 1, tail);
+    }
+    if (y > 0) {
+      tail = enqueueCutoutPixel(queue, seen, pixel - OUTPUT_SIZE, tail);
+    }
+    if (y < OUTPUT_SIZE - 1) {
+      tail = enqueueCutoutPixel(queue, seen, pixel + OUTPUT_SIZE, tail);
+    }
+  }
+}
+
+function prepareFrameLayer(frame: HTMLImageElement, frameSrc: string): HTMLCanvasElement {
   const canvas = makeCanvas(OUTPUT_SIZE, OUTPUT_SIZE);
   const context = get2d(canvas);
 
@@ -96,33 +181,7 @@ function prepareFrameLayer(frame: HTMLImageElement): HTMLCanvasElement {
     return canvas;
   }
 
-  const data = imageData.data;
-  const centerX = OUTPUT_SIZE / 2;
-  const centerY = OUTPUT_SIZE * 0.49;
-  const radiusX = OUTPUT_SIZE * 0.44;
-  const radiusY = OUTPUT_SIZE * 0.45;
-
-  for (let index = 0; index < data.length; index += 4) {
-    const pixel = index / 4;
-    const x = pixel % OUTPUT_SIZE;
-    const y = Math.floor(pixel / OUTPUT_SIZE);
-    const normalized = ((x - centerX) / radiusX) ** 2 + ((y - centerY) / radiusY) ** 2;
-
-    if (normalized > 1.08) continue;
-
-    const red = data[index];
-    const green = data[index + 1];
-    const blue = data[index + 2];
-    const max = Math.max(red, green, blue);
-    const min = Math.min(red, green, blue);
-    const average = (red + green + blue) / 3;
-    const nearWhite = average > 238 && max - min < 18;
-
-    if (!nearWhite) continue;
-
-    const strength = Math.min(1, Math.max(0, (average - 238) / 17));
-    data[index + 3] = Math.round(data[index + 3] * (1 - strength));
-  }
+  clearConnectedCutout(imageData.data);
 
   context.putImageData(imageData, 0, 0);
   return canvas;
@@ -181,7 +240,7 @@ export async function composeAvatar(file: File, frameSrc: string): Promise<Rende
   context.imageSmoothingQuality = 'high';
   drawCover(context, avatarSource, avatarSize.width, avatarSize.height, OUTPUT_SIZE, OUTPUT_SIZE);
 
-  const frameLayer = prepareFrameLayer(frameImage);
+  const frameLayer = prepareFrameLayer(frameImage, frameSrc);
   context.drawImage(frameLayer, 0, 0);
 
   const blob = await canvasToBlob(canvas);

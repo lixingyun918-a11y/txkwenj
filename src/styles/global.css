@@ -834,7 +834,30 @@ html.brand-vivo .panel {
 }
 
 html.browser-wechat .app-shell {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
   padding-bottom: calc(50px + env(safe-area-inset-bottom));
+}
+
+html.browser-wechat .particle-layer i {
+  display: none;
+}
+
+html.browser-wechat .hero-title-art,
+html.browser-wechat .frame-card,
+html.browser-wechat .result-preview {
+  transform: translateZ(0);
+}
+
+html.browser-wechat .hero-title-art::before,
+html.browser-wechat .hero-title-art::after {
+  animation: none;
+}
+
+html.browser-wechat .result-preview img {
+  -webkit-touch-callout: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 html.brand-samsung .frame-card,

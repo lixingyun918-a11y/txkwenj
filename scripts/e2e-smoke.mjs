@@ -48,17 +48,27 @@ function connect(wsUrl) {
   const socket = new WebSocket(wsUrl);
   let id = 0;
   const pending = new Map();
+  const listeners = new Map();
 
   socket.addEventListener('message', (event) => {
     const payload = JSON.parse(event.data);
-    if (!payload.id) return;
-    const request = pending.get(payload.id);
-    if (!request) return;
-    pending.delete(payload.id);
-    if (payload.error) {
-      request.reject(new Error(payload.error.message));
-    } else {
-      request.resolve(payload.result);
+    if (payload.id) {
+      const request = pending.get(payload.id);
+      if (!request) return;
+      pending.delete(payload.id);
+      if (payload.error) {
+        request.reject(new Error(payload.error.message));
+      } else {
+        request.resolve(payload.result);
+      }
+      return;
+    }
+
+    if (payload.method) {
+      const handlers = listeners.get(payload.method) || [];
+      for (const handler of handlers) {
+        handler(payload.params || {});
+      }
     }
   });
 
@@ -74,6 +84,11 @@ function connect(wsUrl) {
         },
         close() {
           socket.close();
+        },
+        on(method, handler) {
+          const handlers = listeners.get(method) || [];
+          handlers.push(handler);
+          listeners.set(method, handlers);
         }
       });
     });
@@ -170,6 +185,95 @@ async function waitForResult(client, previousSrc = '') {
   return result.result.value;
 }
 
+async function getCompatibilityState(client) {
+  const result = await client.send('Runtime.evaluate', {
+    expression: `(() => {
+      const viewportWidth = window.innerWidth;
+      const documentWidth = Math.max(
+        document.documentElement.scrollWidth,
+        document.body?.scrollWidth || 0
+      );
+      const selectors = [
+        '.app-shell',
+        '.hero',
+        '.hero-title-art',
+        '.hero-badge',
+        '.hero p',
+        '.panel',
+        '.upload-control',
+        '.upload-copy',
+        '.frame-grid',
+        '.frame-card',
+        '.result-preview',
+        '.result-note',
+        '.action-row',
+        '.primary-action',
+        '.ghost-action',
+        '.toast'
+      ];
+      const overflow = [];
+      const touchTargets = [];
+      const selectorList = selectors.join(',');
+
+      document.querySelectorAll(selectorList).forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        if (rect.left < -1 || rect.right > viewportWidth + 1) {
+          overflow.push({
+            selector: element.className || element.tagName.toLowerCase(),
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width)
+          });
+        }
+      });
+
+      document.querySelectorAll('button, label.upload-control').forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        if (rect.width < 44 || rect.height < 44) {
+          touchTargets.push({
+            selector: element.className || element.tagName.toLowerCase(),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          });
+        }
+      });
+
+      const brokenImages = Array.from(document.images)
+        .filter((image) => image.complete && (!image.naturalWidth || !image.naturalHeight))
+        .map((image) => image.currentSrc || image.src || image.alt || 'unknown');
+
+      return {
+        viewportWidth,
+        viewportHeight: window.innerHeight,
+        visualViewportWidth: Math.round(window.visualViewport?.width || viewportWidth),
+        visualViewportHeight: Math.round(window.visualViewport?.height || window.innerHeight),
+        documentWidth,
+        hasHorizontalOverflow: documentWidth > viewportWidth + 1,
+        overflow,
+        touchTargets,
+        brokenImages,
+        rootClasses: Array.from(document.documentElement.classList),
+        saveLabel: document.querySelector('.primary-action')?.textContent?.trim() || '',
+        resultNote: document.querySelector('.result-note')?.textContent?.trim() || ''
+      };
+    })()`,
+    returnByValue: true
+  });
+
+  return result.result.value;
+}
+
+function formatEvent(event) {
+  return Object.fromEntries(
+    Object.entries(event)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .slice(0, 8)
+  );
+}
+
 function writeDataUrl(file, dataUrl) {
   const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
   if (!match) return false;
@@ -190,10 +294,50 @@ try {
   await waitForJson(`http://127.0.0.1:${port}/json/version`);
   const target = await createPageTarget();
   const client = await connect(target.webSocketDebuggerUrl);
+  const runtimeErrors = [];
+  const consoleErrors = [];
+  const requestFailures = [];
+  const badResponses = [];
 
   await client.send('Page.enable');
   await client.send('Runtime.enable');
   await client.send('DOM.enable');
+  await client.send('Log.enable');
+  await client.send('Network.enable');
+
+  client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+    runtimeErrors.push({
+      text: exceptionDetails?.text,
+      url: exceptionDetails?.url,
+      lineNumber: exceptionDetails?.lineNumber,
+      columnNumber: exceptionDetails?.columnNumber
+    });
+  });
+  client.on('Log.entryAdded', ({ entry }) => {
+    if (entry?.level === 'error') {
+      consoleErrors.push({
+        source: entry.source,
+        text: entry.text,
+        url: entry.url,
+        lineNumber: entry.lineNumber
+      });
+    }
+  });
+  client.on('Network.loadingFailed', ({ errorText, type, canceled, requestId }) => {
+    if (!canceled) {
+      requestFailures.push({ requestId, type, errorText });
+    }
+  });
+  client.on('Network.responseReceived', ({ response, type }) => {
+    if (response?.status >= 400 && !response.url.startsWith('data:') && !response.url.startsWith('blob:')) {
+      badResponses.push({
+        status: response.status,
+        type,
+        url: response.url
+      });
+    }
+  });
+
   if (userAgent) {
     await client.send('Emulation.setUserAgentOverride', { userAgent });
   }
@@ -210,6 +354,14 @@ try {
   const loadingState = await waitForLoadingGone(client);
   if (!loadingState.ok) {
     throw new Error(`Loading 未在 2.2 秒内移除: ${JSON.stringify(loadingState)}`);
+  }
+
+  const initialCompatibility = await getCompatibilityState(client);
+  if (initialCompatibility.hasHorizontalOverflow || initialCompatibility.overflow.length) {
+    throw new Error(`首屏存在横向溢出: ${JSON.stringify(initialCompatibility)}`);
+  }
+  if (initialCompatibility.brokenImages.length) {
+    throw new Error(`首屏存在加载失败图片: ${JSON.stringify(initialCompatibility.brokenImages)}`);
   }
 
   const documentNode = await client.send('DOM.getDocument', { depth: -1 });
@@ -263,6 +415,31 @@ try {
     previousSrc = frameResult.src;
   }
 
+  const finalCompatibility = await getCompatibilityState(client);
+  if (finalCompatibility.hasHorizontalOverflow || finalCompatibility.overflow.length) {
+    throw new Error(`生成后存在横向溢出: ${JSON.stringify(finalCompatibility)}`);
+  }
+  if (finalCompatibility.brokenImages.length) {
+    throw new Error(`生成后存在加载失败图片: ${JSON.stringify(finalCompatibility.brokenImages)}`);
+  }
+  if (finalCompatibility.touchTargets.length) {
+    throw new Error(`存在小于 44px 的触控目标: ${JSON.stringify(finalCompatibility.touchTargets)}`);
+  }
+  if (/MicroMessenger/i.test(userAgent || '') && !finalCompatibility.rootClasses.includes('browser-wechat')) {
+    throw new Error(`微信 UA 未应用 browser-wechat 类: ${JSON.stringify(finalCompatibility.rootClasses)}`);
+  }
+  if (/MicroMessenger/i.test(userAgent || '') && !finalCompatibility.saveLabel.includes('长按')) {
+    throw new Error(`微信内保存按钮文案异常: ${JSON.stringify(finalCompatibility)}`);
+  }
+  if (runtimeErrors.length || consoleErrors.length || requestFailures.length || badResponses.length) {
+    throw new Error(`页面存在运行时或资源错误: ${JSON.stringify({
+      runtimeErrors: runtimeErrors.map(formatEvent),
+      consoleErrors: consoleErrors.map(formatEvent),
+      requestFailures: requestFailures.map(formatEvent),
+      badResponses: badResponses.map(formatEvent)
+    })}`);
+  }
+
   const screenshot = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   fs.writeFileSync(path.join(outputDir, `${outputPrefix}-page.png`), Buffer.from(screenshot.data, 'base64'));
   writeDataUrl(path.join(outputDir, `${outputPrefix}-generated-avatar.png`), frameResults.at(-1).src);
@@ -272,6 +449,13 @@ try {
     viewport: { width: viewportWidth, height: viewportHeight, deviceScaleFactor },
     header: headerState.result.value,
     loading: loadingState,
+    compatibility: finalCompatibility,
+    errors: {
+      runtime: runtimeErrors.length,
+      console: consoleErrors.length,
+      requests: requestFailures.length,
+      responses: badResponses.length
+    },
     frameCount: frameResults.length,
     frameResults: frameResults.map((item, index) => ({ frame: index + 1, width: item.width, height: item.height, toast: item.toast })),
     screenshot: path.join(outputDir, `${outputPrefix}-page.png`),
