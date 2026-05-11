@@ -32,7 +32,26 @@ body {
   margin: 0;
   overflow-x: hidden;
   overscroll-behavior-y: none;
-  background-color: #9d0810;
+  background-color: #87060d;
+}
+
+#root {
+  min-height: 100%;
+  min-height: 100svh;
+  position: relative;
+  isolation: isolate;
+}
+
+#root::before,
+#root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#root::before {
+  z-index: -2;
   background-image:
     linear-gradient(180deg, rgba(255, 105, 52, 0.08) 0%, rgba(129, 0, 7, 0.22) 46%, rgba(83, 0, 5, 0.58) 100%),
     var(--site-bg-image),
@@ -51,32 +70,14 @@ body {
   }
 }
 
-body::before,
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-}
-
-body::before {
+#root::after {
+  z-index: -1;
   background:
     radial-gradient(circle at 50% 6%, rgba(255, 237, 160, 0.18), transparent 18rem),
-    linear-gradient(90deg, rgba(67, 0, 4, 0.26), transparent 18%, transparent 82%, rgba(67, 0, 4, 0.28));
+    linear-gradient(90deg, rgba(67, 0, 4, 0.3), transparent 18%, transparent 82%, rgba(67, 0, 4, 0.3)),
+    linear-gradient(180deg, transparent 0 22rem, rgba(82, 0, 6, 0.12) 42rem, rgba(58, 0, 5, 0.34) 100%),
+    radial-gradient(circle at 50% 20%, transparent 0 18rem, rgba(68, 0, 3, 0.18) 56rem);
   opacity: 0.82;
-}
-
-body::after {
-  background:
-    linear-gradient(180deg, transparent 0 22rem, rgba(82, 0, 6, 0.14) 42rem, rgba(58, 0, 5, 0.36) 100%),
-    radial-gradient(circle at 50% 20%, transparent 0 18rem, rgba(68, 0, 3, 0.2) 56rem);
-}
-
-#root {
-  min-height: 100%;
-  min-height: 100svh;
-  isolation: isolate;
 }
 
 @supports (height: 100dvh) {
@@ -130,17 +131,6 @@ img {
   padding: calc(18px + env(safe-area-inset-top)) 16px calc(42px + env(safe-area-inset-bottom));
   overflow: hidden;
   animation: pageEnter 180ms ease-out both;
-}
-
-.app-shell::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 4%, rgba(255, 235, 167, 0.28), transparent 16rem),
-    linear-gradient(90deg, rgba(75, 0, 4, 0.18), transparent 24%, transparent 76%, rgba(75, 0, 4, 0.16));
 }
 
 @supports (min-height: 100dvh) {
