@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "node -e \"var f=require('fs');f.existsSync('index.template.html')&&f.copyFileSync('index.template.html','index.html')\" && vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "smoke": "node scripts/e2e-smoke.mjs",
